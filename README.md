@@ -38,7 +38,7 @@ Per frame, ten compute passes per pyramid level, all WGSL:
 webcam ─ YCoCg split ─ luma ─► Laplacian pyramid (per level k):
                   │              Riesz transform  (I, R1, R2) = monogenic signal
                   │              q_t · conj(q_{t-1})  ─► per-pixel phase advance
-                  │              leaky accumulate + IIR bandpass (the freq slider)
+                  │              leaky accumulate + biquad bandpass (the freq slider)
                   │              amplitude²-weighted Gaussian blur
                   │              phase-shift coefficients by α·φ̂  ─► magnified level
                   │            collapse pyramid ─► magnified luma
@@ -60,6 +60,14 @@ boiling mess. Most of the engineering here is in what you *don't* see:
 - **Chroma never enters the amplifier.** Frames are split to YCoCg and only
   luma is processed. Webcam chroma (Bayer interpolation + low-light gain) is
   the noisiest channel, and it is carried through untouched.
+- **A steep temporal bandpass.** The per-pixel filter is a second-order RBJ
+  biquad (±12 dB/octave) rather than a difference of one-pole lowpasses
+  (±6 dB/octave). The steeper skirt is itself noise control: a broad filter
+  lets the spectrum on either side of the heartbeat — much of it sensor
+  noise — leak into the magnified motion. The biquad runs as a transposed
+  Direct Form II recurrence in WGSL; its coefficients are unit-tested in JS
+  (same recurrence) for unity passband gain, octave attenuation, and DC
+  rejection.
 - **Amplitude-weighted phase smoothing.** Phase is meaningless where the
   coefficient amplitude is near zero — in flat regions it is pure noise. The
   bandpassed phase is blurred weighted by amplitude² (`blur(φ·A²)/blur(A²)`),

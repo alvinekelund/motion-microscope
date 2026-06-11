@@ -7,6 +7,7 @@ import blurWgsl from "./shaders/blur.wgsl?raw";
 import magnifyWgsl from "./shaders/magnify.wgsl?raw";
 import collapseWgsl from "./shaders/collapse.wgsl?raw";
 import renderWgsl from "./shaders/render.wgsl?raw";
+import { bandpassCoeffs } from "./biquad";
 import type { GpuContext } from "./context";
 
 export interface MagParams {
@@ -254,14 +255,15 @@ export class MotionMicroscope {
     // --- uniforms ---------------------------------------------------------
     this.smoothedDt = 0.9 * this.smoothedDt + 0.1 * Math.min(dtMs / 1000, 0.1);
     const dt = this.smoothedDt;
-    // Half-octave passband around the chosen center, capped below Nyquist.
-    const fHi = Math.min(params.centerFreq * 1.5, 0.45 / dt);
-    const fLo = Math.min(params.centerFreq / 1.5, fHi * 0.66);
-    const onePole = (f: number) => 1 - Math.exp(-2 * Math.PI * f * dt);
+    // RBJ bandpass biquad (constant 0 dB peak gain) centered on the slider
+    // frequency, capped just below Nyquist. Q sets the band sharpness; ~2.5
+    // is a tight-but-non-ringing band a little under one octave wide.
+    const f0 = Math.min(params.centerFreq, 0.45 / dt);
+    const { b0, a1, a2 } = bandpassCoeffs(f0, 1 / dt, 2.5);
     const leak = Math.exp(-2 * Math.PI * 0.05 * dt);
     device.queue.writeBuffer(
       this.uniforms.temporal, 0,
-      new Float32Array([onePole(fHi), onePole(fLo), leak, 0])
+      new Float32Array([b0, a1, a2, leak])
     );
     for (let k = 0; k < levels; k++) {
       // Finest level carries the most sensor noise and the least pulse
