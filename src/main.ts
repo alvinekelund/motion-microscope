@@ -3,6 +3,7 @@ import { MotionMicroscope } from "./gpu/pipeline";
 import { startCamera } from "./camera";
 import { RhythmTracker, bandForCenterFreq } from "./pulse/bpm";
 import { isSkin } from "./pulse/skin";
+import { globalTranslation } from "./pulse/flow";
 import { UI } from "./ui";
 
 const ui = new UI();
@@ -26,11 +27,11 @@ async function run(): Promise<void> {
   ui.enterLiveMode();
 
   // --- independent vitals path (never reads the magnified output) ---------
-  // Sample the *raw* feed at a tiny resolution and scan nearly the whole
-  // frame for skin: averaging colour over every skin pixel (not a fixed
-  // center crop) lifts the rPPG signal-to-noise and finds the face wherever
-  // it sits. Mean skin colour drives the POS pulse estimate; the skin
-  // brightness centroid drives the breathing/vibration (motion) estimate.
+  // Sample the *raw* feed at a tiny resolution. Two observables come out of
+  // the same probe: mean colour over skin pixels drives the POS pulse
+  // estimate, and the global optical-flow translation of the frame drives the
+  // breathing (motion) estimate — the bulk movement the magnifier makes
+  // visible, measured directly rather than via a noisy centroid.
   const probe = document.createElement("canvas");
   const PW = 64;
   const PH = 48;
@@ -40,40 +41,43 @@ async function run(): Promise<void> {
   const probeCtx = probe.getContext("2d", { willReadFrequently: true })!;
   const tracker = new RhythmTracker();
 
+  let prevLuma: Float64Array | null = null;
+  let posX = 0; // accumulated flow — the band high-pass removes its drift
+  let posY = 0;
+
   const samplePulse = (tMs: number) => {
     probeCtx.drawImage(video, 0, 0, PW, PH);
     const region = probeCtx.getImageData(SX, SY, SW, SH).data;
 
-    // Accumulate skin-masked and whole-region stats in one pass; pick the
-    // skin mask only if enough of it is present, else fall back so we never
-    // measure from a near-empty mask.
-    let sr = 0, sg = 0, sb = 0, sN = 0, sW = 0, sWx = 0, sWy = 0; // skin
-    let fr = 0, fg = 0, fb = 0, fW = 0, fWx = 0, fWy = 0; //          full
-    for (let p = 0, y = 0; y < SH; y++) {
-      for (let x = 0; x < SW; x++, p += 4) {
-        const pr = region[p], pg = region[p + 1], pb = region[p + 2];
-        const l = 0.299 * pr + 0.587 * pg + 0.114 * pb; // luminance for centroid
-        fr += pr; fg += pg; fb += pb;
-        fW += l; fWx += l * x; fWy += l * y;
-        if (isSkin(pr, pg, pb)) {
-          sr += pr; sg += pg; sb += pb; sN++;
-          sW += l; sWx += l * x; sWy += l * y;
-        }
-      }
+    // One pass: skin-masked colour (for pulse) plus a luma frame (for flow).
+    const luma = new Float64Array(SW * SH);
+    let sr = 0, sg = 0, sb = 0, sN = 0;
+    let fr = 0, fg = 0, fb = 0;
+    for (let p = 0, j = 0; j < SW * SH; j++, p += 4) {
+      const pr = region[p], pg = region[p + 1], pb = region[p + 2];
+      luma[j] = 0.299 * pr + 0.587 * pg + 0.114 * pb;
+      fr += pr; fg += pg; fb += pb;
+      if (isSkin(pr, pg, pb)) { sr += pr; sg += pg; sb += pb; sN++; }
     }
 
-    const px = SW * SH;
-    const useSkin = sN >= px * 0.05 && sW > 0;
-    const n = useSkin ? sN : px;
+    // Colour: prefer the skin mask, fall back to the whole region if too little
+    // skin is found so we never average a near-empty mask.
+    const total = SW * SH;
+    const useSkin = sN >= total * 0.05;
+    const n = useSkin ? sN : total;
     const r = useSkin ? sr : fr;
     const g = useSkin ? sg : fg;
     const b = useSkin ? sb : fb;
-    const W = useSkin ? sW : fW;
-    const Wx = useSkin ? sWx : fWx;
-    const Wy = useSkin ? sWy : fWy;
-    const cx = W > 0 ? Wx / W : SW / 2;
-    const cy = W > 0 ? Wy / W : SH / 2;
-    tracker.addSample(r / n, g / n, b / n, cx, cy, tMs);
+
+    // Motion: accumulate the per-frame global translation into a position.
+    if (prevLuma) {
+      const { dx, dy } = globalTranslation(prevLuma, luma, SW, SH);
+      posX += dx;
+      posY += dy;
+    }
+    prevLuma = luma;
+
+    tracker.addSample(r / n, g / n, b / n, posX, posY, tMs);
   };
   setInterval(
     () => ui.updateVitals(tracker.estimate(bandForCenterFreq(ui.params.centerFreq))),

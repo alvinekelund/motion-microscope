@@ -65,6 +65,35 @@ html, body { height: 100%; background: var(--bg); color: var(--ink); }
 .split-label.left { right: 14px; }
 .split-label.right { left: 14px; }
 
+/* ---- beat indicator ---- */
+#beat {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  pointer-events: none;
+}
+#beat-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-soft);
+  transform: scale(1);
+  opacity: 0.4;
+  will-change: transform, opacity;
+}
+#beat-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-shadow: 0 0 6px #0a0e12;
+  opacity: 0.7;
+}
+
 /* ---- start screen ---- */
 #start-screen {
   position: absolute;

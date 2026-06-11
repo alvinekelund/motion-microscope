@@ -45,8 +45,17 @@ export class UI {
     lock: document.getElementById("lock") as HTMLInputElement,
     explainToggle: document.getElementById("explain-toggle") as HTMLButtonElement,
     explain: document.getElementById("explain") as HTMLElement,
+    beat: document.getElementById("beat") as HTMLElement,
+    beatDot: document.getElementById("beat-dot") as HTMLElement,
+    beatLabel: document.getElementById("beat-label") as HTMLElement,
     perf: document.getElementById("perf") as HTMLElement,
   };
+
+  // Beat indicator state — a continuous oscillator at the detected rate.
+  private beatHz = 0;
+  private beatConf = 0;
+  private beatPhase = 0;
+  private beatLast = 0;
 
   constructor() {
     this.el.alpha.addEventListener("input", () => {
@@ -107,8 +116,29 @@ export class UI {
     this.el.startScreen.style.display = "none";
     this.el.panel.hidden = false;
     this.el.splitHandle.style.display = "block";
+    this.el.beat.hidden = false;
     this.positionSplitHandle();
+    requestAnimationFrame(this.animateBeat);
   }
+
+  /**
+   * Drive the corner dot with a continuous oscillator at the detected rate, so
+   * it visibly inflates once per beat/breath — independent of the 1 Hz vitals
+   * tick, so the motion is smooth. It only pulses convincingly when there's a
+   * confident lock; otherwise it idles dim, which keeps it honest.
+   */
+  private animateBeat = (now: number): void => {
+    const dt = this.beatLast ? Math.min((now - this.beatLast) / 1000, 0.1) : 0;
+    this.beatLast = now;
+    const locked = this.beatHz > 0 && this.beatConf > 0.3;
+    const hz = locked ? this.beatHz : 0.25; // idle ≈ a calm breath
+    this.beatPhase += 2 * Math.PI * hz * dt;
+    const s = 0.5 + 0.5 * Math.sin(this.beatPhase); // 0..1, peaks each cycle
+    const grow = locked ? 0.35 : 0.12;
+    this.el.beatDot.style.transform = `scale(${(1 + grow * s).toFixed(3)})`;
+    this.el.beatDot.style.opacity = (locked ? 0.4 + 0.5 * s : 0.14 + 0.06 * s).toFixed(3);
+    requestAnimationFrame(this.animateBeat);
+  };
 
   get canvas(): HTMLCanvasElement {
     return this.el.canvas;
@@ -152,6 +182,11 @@ export class UI {
         est.wave.length < 160 ? "measuring… hold still" : "weak signal — more light helps";
     }
     this.drawSparkline(est.wave);
+
+    // Feed the beat indicator: pulse at the detected rate when confident.
+    this.beatHz = est.freqHz ?? 0;
+    this.beatConf = est.confidence;
+    this.el.beatLabel.textContent = est.label === "BREATHS" ? "breath" : "pulse";
 
     // Auto-tune: steer the magnifier to the rate we just measured. Safe
     // because the detector never reads the magnified output — no feedback.

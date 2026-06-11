@@ -25,7 +25,10 @@ below.)
 The panel's **"how is the BPM measured?"** note spells out the one thing every
 viewer gets wrong: the pulsing you *see* is amplified motion, but the BPM is
 read from something else entirely — invisible colour changes. That distinction
-is the whole point, so the app says it out loud.
+is the whole point, so the app says it out loud. A small dot in the corner
+inflates once per detected beat (or breath), so you can tell at a glance that
+the measurement is actually tracking something — it only pulses when there's a
+confident lock, and idles dim otherwise.
 
 ## How it works
 
@@ -109,12 +112,15 @@ physics:
   the skin-tone vector. This rejects the ambient-brightness flicker that
   naïve green-channel rPPG mistakes for a heartbeat.
 - **Breathing** is *motion* — the head and shoulders visibly translate. The
-  subtle but important point: the mean brightness of a fixed crop is nearly
-  invariant when content just slides across it, so mean luminance is weakest
-  exactly when the motion is largest. Instead the breathing band tracks the
-  **brightness centroid** of the region, which moves linearly with
-  displacement, on both axes, and sums their power spectra so the direction of
-  movement doesn't matter.
+  measurement tracks the **global optical-flow translation** of the frame: the
+  Lucas-Kanade least-squares fit of a single (dx, dy) to the whole probe's
+  brightness gradients each frame, accumulated into a position signal. This is
+  the same bulk movement the magnifier makes visible, measured directly — and
+  it matters which estimator you pick. An earlier version read a brightness
+  *centroid* over the skin mask, but the mask flickers frame to frame, so the
+  centroid jittered and locked onto stray low-frequency wobble instead of the
+  breath. Optical flow uses every pixel's gradient consistently and recovers
+  sub-pixel shifts (unit-tested to ~0.02 px), so it follows breathing cleanly.
 
 Both paths are high-passed with a moving-average baseline sized to the band's
 low edge, which flattens slow, *non-linear* lighting drift (auto-exposure
