@@ -26,13 +26,15 @@ async function run(): Promise<void> {
   ui.enterLiveMode();
 
   // --- independent vitals path (never reads the magnified output) ---------
-  // Sample a small center crop of the *raw* feed: mean colour drives the POS
-  // pulse estimate, the brightness centroid drives the breathing/vibration
-  // (motion) estimate.
+  // Sample the *raw* feed at a tiny resolution and scan nearly the whole
+  // frame for skin: averaging colour over every skin pixel (not a fixed
+  // center crop) lifts the rPPG signal-to-noise and finds the face wherever
+  // it sits. Mean skin colour drives the POS pulse estimate; the skin
+  // brightness centroid drives the breathing/vibration (motion) estimate.
   const probe = document.createElement("canvas");
   const PW = 64;
   const PH = 48;
-  const RX = 16, RY = 8, RW = 32, RH = 32; // center region of interest
+  const SX = 2, SY = 2, SW = PW - 4, SH = PH - 4; // scan region (2px border trimmed)
   probe.width = PW;
   probe.height = PH;
   const probeCtx = probe.getContext("2d", { willReadFrequently: true })!;
@@ -40,15 +42,15 @@ async function run(): Promise<void> {
 
   const samplePulse = (tMs: number) => {
     probeCtx.drawImage(video, 0, 0, PW, PH);
-    const region = probeCtx.getImageData(RX, RY, RW, RH).data;
+    const region = probeCtx.getImageData(SX, SY, SW, SH).data;
 
     // Accumulate skin-masked and whole-region stats in one pass; pick the
     // skin mask only if enough of it is present, else fall back so we never
     // measure from a near-empty mask.
     let sr = 0, sg = 0, sb = 0, sN = 0, sW = 0, sWx = 0, sWy = 0; // skin
     let fr = 0, fg = 0, fb = 0, fW = 0, fWx = 0, fWy = 0; //          full
-    for (let p = 0, y = 0; y < RH; y++) {
-      for (let x = 0; x < RW; x++, p += 4) {
+    for (let p = 0, y = 0; y < SH; y++) {
+      for (let x = 0; x < SW; x++, p += 4) {
         const pr = region[p], pg = region[p + 1], pb = region[p + 2];
         const l = 0.299 * pr + 0.587 * pg + 0.114 * pb; // luminance for centroid
         fr += pr; fg += pg; fb += pb;
@@ -60,8 +62,8 @@ async function run(): Promise<void> {
       }
     }
 
-    const px = RW * RH;
-    const useSkin = sN >= px * 0.08 && sW > 0;
+    const px = SW * SH;
+    const useSkin = sN >= px * 0.05 && sW > 0;
     const n = useSkin ? sN : px;
     const r = useSkin ? sr : fr;
     const g = useSkin ? sg : fg;
@@ -69,8 +71,8 @@ async function run(): Promise<void> {
     const W = useSkin ? sW : fW;
     const Wx = useSkin ? sWx : fWx;
     const Wy = useSkin ? sWy : fWy;
-    const cx = W > 0 ? Wx / W : RW / 2;
-    const cy = W > 0 ? Wy / W : RH / 2;
+    const cx = W > 0 ? Wx / W : SW / 2;
+    const cy = W > 0 ? Wy / W : SH / 2;
     tracker.addSample(r / n, g / n, b / n, cx, cy, tMs);
   };
   setInterval(

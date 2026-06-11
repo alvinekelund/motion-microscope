@@ -107,13 +107,17 @@ physics:
   which moves linearly with displacement, on both axes, and sum their power
   spectra so the direction of movement doesn't matter.
 
-Both observables are sampled only over **skin pixels**: a cheap per-pixel
+Both observables are sampled only over **skin pixels**, scanned across nearly
+the whole tiny probe frame rather than a fixed center crop: a cheap per-pixel
 classifier masks the probe so background, hair and clothing don't dilute the
-signal — measured contamination is real, an unmasked crop over a blue
-background pulls the mean colour from `[200,150,120]` to `[136,118,136]`,
-halving the pulse amplitude. The mask is paired with a whole-region fallback,
-so a skin tone or lighting it under-selects degrades to the old behaviour
-rather than reporting from an empty mask.
+signal, and averaging over every skin pixel both lifts the signal-to-noise and
+finds a face that isn't centered (a corner face the old crop scored at zero
+skin pixels the full scan picks up cleanly). Measured contamination is real —
+an unmasked crop over a blue background pulls the mean colour from
+`[200,150,120]` to `[136,118,136]`, halving the pulse amplitude. The mask is
+paired with a whole-region fallback, so a skin tone or lighting it
+under-selects degrades to the old behaviour rather than reporting from an
+empty mask.
 
 The masked signals are then detrended, Hamming-windowed, zero-padded FFT'd,
 and reduced to the dominant in-band peak with parabolic sub-bin interpolation
