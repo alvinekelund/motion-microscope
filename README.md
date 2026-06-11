@@ -16,7 +16,10 @@ npm run dev      # open http://localhost:5173 in Chrome/Edge (or Safari 26+)
 
 Sit still, face the camera in decent light. Drag the red divider to compare
 the untouched feed against the magnified one. Sweep the frequency slider from
-breathing (0.3 Hz) through heartbeat (~1.2 Hz) up to tremor and vibration.
+breathing (0.3 Hz) through heartbeat (~1.2 Hz) up to tremor and vibration — or
+tick **tune magnifier to my rate** and let it lock the magnifier to whatever
+pulse it measures on you. (That's safe precisely because the measurement is
+independent of the magnified output; see below.)
 
 ## How it works
 

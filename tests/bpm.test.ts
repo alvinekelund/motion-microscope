@@ -80,6 +80,17 @@ describe("RhythmTracker — pulse band", () => {
     const est = tracker.estimate(band);
     expect(Math.abs(est.value! - 150)).toBeLessThanOrEqual(3);
   });
+
+  it("exposes freqHz consistent with the BPM (drives the lock auto-tune)", () => {
+    seed = 42;
+    const tracker = new RhythmTracker();
+    pulseTrace(tracker, 72, 30);
+    const est = tracker.estimate(band);
+    expect(est.freqHz).not.toBeNull();
+    expect(est.freqHz! * 60).toBeCloseTo(est.value!, 0);
+    expect(est.freqHz!).toBeGreaterThan(1.0); // ~1.2 Hz
+    expect(est.freqHz!).toBeLessThan(1.4);
+  });
 });
 
 describe("RhythmTracker — breathing band (motion)", () => {

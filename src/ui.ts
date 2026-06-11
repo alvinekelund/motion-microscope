@@ -39,6 +39,7 @@ export class UI {
     bpmLabel: document.getElementById("bpm-label") as HTMLElement,
     bpmHint: document.getElementById("bpm-hint") as HTMLElement,
     spark: document.getElementById("pulse-spark") as HTMLCanvasElement,
+    lock: document.getElementById("lock") as HTMLInputElement,
     perf: document.getElementById("perf") as HTMLElement,
   };
 
@@ -63,6 +64,14 @@ export class UI {
     this.el.denoise.addEventListener("input", () => {
       this.params.denoise = Number(this.el.denoise.value) / 100;
       this.el.denoiseOut.textContent = this.params.denoise.toFixed(2);
+    });
+
+    // When locking is on, the magnifier is driven by the detected rate, so
+    // the manual frequency controls are disabled to make that explicit.
+    this.el.lock.addEventListener("change", () => {
+      const on = this.el.lock.checked;
+      this.el.freq.disabled = on;
+      for (const btn of this.el.presets) btn.disabled = on;
     });
 
     this.bindSplitDrag();
@@ -134,6 +143,14 @@ export class UI {
         est.wave.length < 160 ? "measuring… hold still" : "weak signal — more light helps";
     }
     this.drawSparkline(est.wave);
+
+    // Auto-tune: steer the magnifier to the rate we just measured. Safe
+    // because the detector never reads the magnified output — no feedback.
+    if (this.el.lock.checked && est.freqHz !== null && est.confidence > 0.3) {
+      const f = Math.min(FREQ_MAX, Math.max(FREQ_MIN, est.freqHz));
+      this.el.freq.value = String(freqToSlider(f));
+      this.setFreq(f);
+    }
   }
 
   updatePerf(fps: number): void {

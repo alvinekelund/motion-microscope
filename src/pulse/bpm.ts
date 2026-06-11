@@ -16,6 +16,8 @@ export interface RhythmEstimate {
   unit: "breaths/min" | "BPM" | "Hz";
   /** Big label shown under the number. */
   label: string;
+  /** Smoothed detected frequency in Hz, or null — drives the "lock" auto-tune. */
+  freqHz: number | null;
   /** Peak prominence in the search band, 0..1. >0.25 is trustworthy. */
   confidence: number;
   /** Recent signal for the sparkline (newest last). */
@@ -111,7 +113,7 @@ export class RhythmTracker {
     // Source signal(s): pulse is one colour signal; motion sums both centroid axes.
     const sources = band.kind === "pulse" ? [this.posSignal()] : [detrend(this.cx), detrend(this.cy)];
     const wave = sources[0].slice(-160);
-    const blank: RhythmEstimate = { value: null, unit, label, confidence: 0, wave };
+    const blank: RhythmEstimate = { value: null, unit, label, freqHz: null, confidence: 0, wave };
     if (n === 0) return blank;
 
     // Warm-up: enough samples for ~3 cycles of a *typical* rate in the band.
@@ -162,7 +164,8 @@ export class RhythmTracker {
     const sm = this.smoothed.get(band.kind);
     const value =
       sm === undefined ? null : band.kind === "vibration" ? Math.round(sm * 10) / 10 : Math.round(sm);
-    return { value, unit, label, confidence, wave };
+    const freqHz = sm === undefined ? null : band.kind === "vibration" ? sm : sm / 60;
+    return { value, unit, label, freqHz, confidence, wave };
   }
 
   private sampleRate(): number {
