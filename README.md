@@ -77,18 +77,39 @@ boiling mess. Most of the engineering here is in what you *don't* see:
   a one-pole DC blocker at ~0.05 Hz, two decades below the heartbeat — that
   keeps every stored value small and fp16-exact indefinitely.
 
-## The BPM counter is deliberately independent
+## The vitals counter is deliberately independent
 
-The number is classic remote photoplethysmography on the **raw** feed: mean
-green level over the face region → detrend (kills auto-exposure ramps) →
-Hamming window → zero-padded FFT → strongest peak in 0.7–3 Hz with parabolic
-sub-bin interpolation and a prominence gate. It never reads the magnified
-output — so the visible pulsing and the ticking number are two separate
-measurements corroborating each other, not one effect dressing up the other.
+The number beside the video is measured from the **raw** feed and tracks
+whichever band the slider is on — breaths/min, BPM, or a raw Hz — over a ~30 s
+sliding window. It is computed from a different observable depending on what
+kind of signal that band is, because pulse and breathing are not the same
+physics:
 
-The signal-processing path is plain TypeScript with unit tests
-(`npm test`): FFT correctness, recovery of 72 and 150 bpm from noisy drifting
-synthetic traces, and silence on pure noise.
+- **Pulse** is a *colour* change — blood volume modulates skin reflectance by
+  a fraction of a percent, with no visible movement. So the cardiac band uses
+  **POS** (plane-orthogonal-to-skin, Wang et al. 2017): per-channel temporal
+  means are divided out and the residual is projected onto axes orthogonal to
+  the skin-tone vector. This rejects the ambient-brightness flicker that
+  naïve green-channel rPPG mistakes for a heartbeat.
+- **Breathing and vibration** are *motion* — the head and shoulders visibly
+  translate. The subtle but important point: the mean brightness of a fixed
+  crop is nearly invariant when content just slides across it, so mean
+  luminance is weakest exactly when the motion is largest. Instead the
+  breathing/vibration bands track the **brightness centroid** of the region,
+  which moves linearly with displacement, on both axes, and sum their power
+  spectra so the direction of movement doesn't matter.
+
+Both are then detrended, Hamming-windowed, zero-padded FFT'd, and reduced to
+the dominant in-band peak with parabolic sub-bin interpolation behind a
+prominence gate. None of it reads the magnified output — the visible pulsing
+and the ticking number are independent measurements corroborating each other,
+not one effect dressing up the other.
+
+The signal path is plain TypeScript with unit tests (`npm test`): FFT
+correctness, POS recovery of 72 and 150 BPM from noisy drifting traces,
+breathing recovery from centroid motion **with colour held perfectly flat**
+(the case the old luminance approach could not see), vibration in Hz, and
+silence on pure noise.
 
 ## Performance
 

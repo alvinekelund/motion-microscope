@@ -24,25 +24,41 @@ async function run(): Promise<void> {
   const scope = await MotionMicroscope.create(gpu, video);
   ui.enterLiveMode();
 
-  // --- independent rPPG path for the BPM counter --------------------------
-  // Mean green over the center crop of a tiny downscale of the *raw* feed.
+  // --- independent vitals path (never reads the magnified output) ---------
+  // Sample a small center crop of the *raw* feed: mean colour drives the POS
+  // pulse estimate, the brightness centroid drives the breathing/vibration
+  // (motion) estimate.
   const probe = document.createElement("canvas");
-  probe.width = 64;
-  probe.height = 48;
+  const PW = 64;
+  const PH = 48;
+  const RX = 16, RY = 8, RW = 32, RH = 32; // center region of interest
+  probe.width = PW;
+  probe.height = PH;
   const probeCtx = probe.getContext("2d", { willReadFrequently: true })!;
   const tracker = new RhythmTracker();
 
   const samplePulse = (tMs: number) => {
-    probeCtx.drawImage(video, 0, 0, probe.width, probe.height);
-    const region = probeCtx.getImageData(16, 8, 32, 32).data;
+    probeCtx.drawImage(video, 0, 0, PW, PH);
+    const region = probeCtx.getImageData(RX, RY, RW, RH).data;
     let r = 0, g = 0, b = 0;
-    for (let i = 0; i < region.length; i += 4) {
-      r += region[i];
-      g += region[i + 1];
-      b += region[i + 2];
+    let wsum = 0, wx = 0, wy = 0;
+    for (let p = 0, y = 0; y < RH; y++) {
+      for (let x = 0; x < RW; x++, p += 4) {
+        const pr = region[p], pg = region[p + 1], pb = region[p + 2];
+        r += pr;
+        g += pg;
+        b += pb;
+        // Luminance-weighted centroid: shifts as the subject translates.
+        const l = 0.299 * pr + 0.587 * pg + 0.114 * pb;
+        wsum += l;
+        wx += l * x;
+        wy += l * y;
+      }
     }
-    const px = region.length / 4;
-    tracker.addSample(r / px, g / px, b / px, tMs);
+    const px = RW * RH;
+    const cx = wsum > 0 ? wx / wsum : RW / 2;
+    const cy = wsum > 0 ? wy / wsum : RH / 2;
+    tracker.addSample(r / px, g / px, b / px, cx, cy, tMs);
   };
   setInterval(
     () => ui.updateVitals(tracker.estimate(bandForCenterFreq(ui.params.centerFreq))),
