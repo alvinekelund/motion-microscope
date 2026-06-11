@@ -114,9 +114,12 @@ export class RhythmTracker {
     const blank: RhythmEstimate = { value: null, unit, label, confidence: 0, wave };
     if (n === 0) return blank;
 
-    // Warm-up: need a few cycles of the slowest frequency in the band.
+    // Warm-up: enough samples for ~3 cycles of a *typical* rate in the band.
+    // Gating on the absolute band floor (e.g. 0.1 Hz) would stall the readout
+    // for half a minute; real breathing sits nearer 0.2 Hz, so warm up to that.
     const fs = this.sampleRate();
-    const minSamples = Math.min(WINDOW * 0.6, Math.max(150, Math.round((4 * fs) / band.lo)));
+    const typicalLo = Math.max(band.lo, band.kind === "breathing" ? 0.2 : band.lo);
+    const minSamples = Math.min(WINDOW * 0.5, Math.max(150, Math.round((3 * fs) / typicalLo)));
     if (n < minSamples) return blank;
 
     // Combined magnitude spectrum across all source signals.

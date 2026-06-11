@@ -99,11 +99,19 @@ physics:
   which moves linearly with displacement, on both axes, and sum their power
   spectra so the direction of movement doesn't matter.
 
-Both are then detrended, Hamming-windowed, zero-padded FFT'd, and reduced to
-the dominant in-band peak with parabolic sub-bin interpolation behind a
-prominence gate. None of it reads the magnified output — the visible pulsing
-and the ticking number are independent measurements corroborating each other,
-not one effect dressing up the other.
+Both observables are sampled only over **skin pixels**: a cheap per-pixel
+classifier masks the probe so background, hair and clothing don't dilute the
+signal — measured contamination is real, an unmasked crop over a blue
+background pulls the mean colour from `[200,150,120]` to `[136,118,136]`,
+halving the pulse amplitude. The mask is paired with a whole-region fallback,
+so a skin tone or lighting it under-selects degrades to the old behaviour
+rather than reporting from an empty mask.
+
+The masked signals are then detrended, Hamming-windowed, zero-padded FFT'd,
+and reduced to the dominant in-band peak with parabolic sub-bin interpolation
+behind a prominence gate. None of it reads the magnified output — the visible
+pulsing and the ticking number are independent measurements corroborating each
+other, not one effect dressing up the other.
 
 The signal path is plain TypeScript with unit tests (`npm test`): FFT
 correctness, POS recovery of 72 and 150 BPM from noisy drifting traces,
