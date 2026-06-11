@@ -43,6 +43,16 @@
         <canvas id="pulse-spark" width="220" height="56"></canvas>
         <div id="bpm-hint">hold still, face well lit…</div>
         <label id="lock-row"><input id="lock" type="checkbox" /> tune magnifier to my rate</label>
+        <button id="explain-toggle" type="button">ⓘ how is the BPM measured?</button>
+        <div id="explain" hidden>
+          Two different signals. The motion you <em>see</em> magnified — breathing,
+          a faint pulse — is amplified movement. The <strong>BPM is not from that
+          movement.</strong> It's read separately from ~1% changes in your skin's
+          colour as blood flows through it: invisible to your eye, but measurable
+          across thousands of pixels averaged over time. The number and the
+          pulsing are independent measurements that agree —
+          <a href="https://news.mit.edu/2010/pulse-camera-1004" target="_blank" rel="noreferrer">the colour method is rPPG (MIT, 2010)</a>.
+        </div>
       </section>
 
       <section class="control">
@@ -56,7 +66,6 @@
         <div class="presets">
           <button data-freq="0.3">breathing</button>
           <button data-freq="1.2" class="active">heartbeat</button>
-          <button data-freq="8">tremor / vibration</button>
         </div>
       </section>
 

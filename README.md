@@ -15,11 +15,17 @@ npm run dev      # open http://localhost:5173 in Chrome/Edge (or Safari 26+)
 ```
 
 Sit still, face the camera in decent light. Drag the red divider to compare
-the untouched feed against the magnified one. Sweep the frequency slider from
-breathing (0.3 Hz) through heartbeat (~1.2 Hz) up to tremor and vibration — or
-tick **tune magnifier to my rate** and let it lock the magnifier to whatever
-pulse it measures on you. (That's safe precisely because the measurement is
-independent of the magnified output; see below.)
+the untouched feed against the magnified one. Sweep the frequency slider
+between breathing (~0.3 Hz) and heartbeat (~1.2 Hz) — the two rhythms that
+actually show on a face — or tick **tune magnifier to my rate** and let it
+lock the magnifier to whatever pulse it measures on you. (That's safe
+precisely because the measurement is independent of the magnified output; see
+below.)
+
+The panel's **"how is the BPM measured?"** note spells out the one thing every
+viewer gets wrong: the pulsing you *see* is amplified motion, but the BPM is
+read from something else entirely — invisible colour changes. That distinction
+is the whole point, so the app says it out loud.
 
 ## How it works
 
@@ -102,13 +108,18 @@ physics:
   means are divided out and the residual is projected onto axes orthogonal to
   the skin-tone vector. This rejects the ambient-brightness flicker that
   naïve green-channel rPPG mistakes for a heartbeat.
-- **Breathing and vibration** are *motion* — the head and shoulders visibly
-  translate. The subtle but important point: the mean brightness of a fixed
-  crop is nearly invariant when content just slides across it, so mean
-  luminance is weakest exactly when the motion is largest. Instead the
-  breathing/vibration bands track the **brightness centroid** of the region,
-  which moves linearly with displacement, on both axes, and sum their power
-  spectra so the direction of movement doesn't matter.
+- **Breathing** is *motion* — the head and shoulders visibly translate. The
+  subtle but important point: the mean brightness of a fixed crop is nearly
+  invariant when content just slides across it, so mean luminance is weakest
+  exactly when the motion is largest. Instead the breathing band tracks the
+  **brightness centroid** of the region, which moves linearly with
+  displacement, on both axes, and sums their power spectra so the direction of
+  movement doesn't matter.
+
+Both paths are high-passed with a moving-average baseline sized to the band's
+low edge, which flattens slow, *non-linear* lighting drift (auto-exposure
+ramps, someone leaning toward the camera) that a single linear detrend leaves
+behind — the documented failure mode for webcam rPPG.
 
 Both observables are sampled only over **skin pixels**, scanned across nearly
 the whole tiny probe frame rather than a fixed center crop: a cheap per-pixel
@@ -131,8 +142,9 @@ other, not one effect dressing up the other.
 The signal path is plain TypeScript with unit tests (`npm test`): FFT
 correctness, POS recovery of 72 and 150 BPM from noisy drifting traces,
 breathing recovery from centroid motion **with colour held perfectly flat**
-(the case the old luminance approach could not see), vibration in Hz, and
-silence on pure noise.
+(the case the old luminance approach could not see), breathing recovery under
+**non-linear drift** that defeats a linear detrend, the high-pass preserving
+an in-band tone while killing a ramp, and silence on pure noise.
 
 ## Performance
 

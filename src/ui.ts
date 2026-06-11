@@ -1,8 +1,11 @@
 import type { MagParams } from "./gpu/pipeline";
 import type { RhythmEstimate } from "./pulse/bpm";
 
+// Slider spans only the two bands that actually show on a face: breathing
+// (~0.2 Hz) through the cardiac range (up to ~210 bpm). The high-frequency
+// "vibration" regime had nothing to display on a webcam selfie, so it's gone.
 const FREQ_MIN = 0.2;
-const FREQ_MAX = 12;
+const FREQ_MAX = 3.5;
 
 /** Map slider position 0..1000 onto a log frequency scale. */
 function sliderToFreq(v: number): number {
@@ -40,6 +43,8 @@ export class UI {
     bpmHint: document.getElementById("bpm-hint") as HTMLElement,
     spark: document.getElementById("pulse-spark") as HTMLCanvasElement,
     lock: document.getElementById("lock") as HTMLInputElement,
+    explainToggle: document.getElementById("explain-toggle") as HTMLButtonElement,
+    explain: document.getElementById("explain") as HTMLElement,
     perf: document.getElementById("perf") as HTMLElement,
   };
 
@@ -72,6 +77,10 @@ export class UI {
       const on = this.el.lock.checked;
       this.el.freq.disabled = on;
       for (const btn of this.el.presets) btn.disabled = on;
+    });
+
+    this.el.explainToggle.addEventListener("click", () => {
+      this.el.explain.hidden = !this.el.explain.hidden;
     });
 
     this.bindSplitDrag();

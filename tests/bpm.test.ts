@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RhythmTracker, bandForCenterFreq } from "../src/pulse/bpm";
+import { RhythmTracker, bandForCenterFreq, bandHighpass } from "../src/pulse/bpm";
 
 const fs = 30;
 let seed = 42;
@@ -118,15 +118,47 @@ describe("RhythmTracker — breathing band (motion)", () => {
   });
 });
 
-describe("RhythmTracker — vibration band", () => {
-  it("reports a raw frequency in Hz", () => {
-    seed = 99;
+describe("RhythmTracker — non-linear drift rejection (band high-pass)", () => {
+  it("recovers breathing when the centroid also drifts non-linearly (slow lean)", () => {
+    seed = 5;
     const tracker = new RhythmTracker();
-    motionTrace(tracker, 8, 12); // 8 Hz tremor
-    const est = tracker.estimate(bandForCenterFreq(8));
-    expect(est.unit).toBe("Hz");
+    const f = 15 / 60; // 0.25 Hz
+    for (let i = 0; i < 30 * fs; i++) {
+      const t = i / fs;
+      const breath = 3 * Math.sin(2 * Math.PI * f * t);
+      // A slow, curved lean toward the camera — non-linear, several× the breath
+      // amplitude. A single linear detrend leaves a big residual; the moving-
+      // average high-pass should flatten it.
+      const drift = 9 * Math.sin(2 * Math.PI * 0.02 * t) + 0.02 * t * t;
+      tracker.addSample(
+        150 + 0.3 * rand(), 140 + 0.3 * rand(), 120 + 0.3 * rand(),
+        16 + breath + drift + 0.1 * rand(),
+        16 + breath + drift + 0.1 * rand(),
+        i * (1000 / fs)
+      );
+    }
+    const est = tracker.estimate(bandForCenterFreq(0.3));
     expect(est.value).not.toBeNull();
-    expect(Math.abs(est.value! - 8)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(est.value! - 15)).toBeLessThanOrEqual(2);
+  });
+
+  it("bandHighpass removes a slow ramp but keeps an in-band tone", () => {
+    const fsLocal = 30;
+    const n = 600;
+    const sig: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const t = i / fsLocal;
+      sig.push(50 + 5 * t + Math.sin(2 * Math.PI * 1.2 * t)); // DC + ramp + 1.2 Hz
+    }
+    const hp = bandHighpass(sig, fsLocal, 0.7);
+    // Baseline gone: mean near zero, endpoints not dominated by the ramp.
+    const mean = hp.reduce((s, v) => s + v, 0) / n;
+    expect(Math.abs(mean)).toBeLessThan(0.1);
+    // In-band tone preserved: amplitude still ~1.
+    let amp = 0;
+    for (let i = 100; i < n - 100; i++) amp = Math.max(amp, Math.abs(hp[i]));
+    expect(amp).toBeGreaterThan(0.8);
+    expect(amp).toBeLessThan(1.2);
   });
 });
 

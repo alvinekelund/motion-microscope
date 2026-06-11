@@ -110,8 +110,14 @@ export class RhythmTracker {
     const label = band.kind === "breathing" ? "BREATHS" : band.kind === "pulse" ? "BPM" : "FREQUENCY";
 
     const n = this.r.length;
-    // Source signal(s): pulse is one colour signal; motion sums both centroid axes.
-    const sources = band.kind === "pulse" ? [this.posSignal()] : [detrend(this.cx), detrend(this.cy)];
+    const fs = this.sampleRate();
+    // Source signal(s): pulse is one colour signal; motion sums both centroid
+    // axes. Each is high-passed at the band's low edge — subtracting a
+    // moving-average baseline ~1/band.lo seconds wide removes slow lighting
+    // drift (including the non-linear auto-exposure ramps a single linear
+    // detrend leaves behind) without touching the signal in-band.
+    const rawSources = band.kind === "pulse" ? [this.posSignal()] : [this.cx.slice(), this.cy.slice()];
+    const sources = rawSources.map((s) => bandHighpass(s, fs, band.lo));
     const wave = sources[0].slice(-160);
     const blank: RhythmEstimate = { value: null, unit, label, freqHz: null, confidence: 0, wave };
     if (n === 0) return blank;
@@ -119,7 +125,6 @@ export class RhythmTracker {
     // Warm-up: enough samples for ~3 cycles of a *typical* rate in the band.
     // Gating on the absolute band floor (e.g. 0.1 Hz) would stall the readout
     // for half a minute; real breathing sits nearer 0.2 Hz, so warm up to that.
-    const fs = this.sampleRate();
     const typicalLo = Math.max(band.lo, band.kind === "breathing" ? 0.2 : band.lo);
     const minSamples = Math.min(WINDOW * 0.5, Math.max(150, Math.round((3 * fs) / typicalLo)));
     if (n < minSamples) return blank;
@@ -218,19 +223,25 @@ function magnitudeSpectrum(signal: number[], n: number): Float64Array {
   return out;
 }
 
-/** Remove mean + linear trend (lighting drift, slow head reposition). */
-function detrend(values: number[]): number[] {
+/**
+ * Band-aware high-pass: subtract a centered moving-average baseline whose
+ * width is ~1/fLo seconds. This flattens any drift slower than the band's low
+ * edge — auto-exposure ramps, someone dimming a lamp, slow head reposition —
+ * including non-linear drift a single linear fit can't follow, while leaving
+ * everything in-band untouched. Prefix sums keep it O(n).
+ */
+export function bandHighpass(values: number[], fs: number, fLo: number): number[] {
   const n = values.length;
   if (n === 0) return [];
-  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  const W = Math.max(3, Math.round(fs / Math.max(fLo, 1e-3)));
+  const half = W >> 1;
+  const pre = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + values[i];
+  const out = new Array<number>(n);
   for (let i = 0; i < n; i++) {
-    sx += i;
-    sy += values[i];
-    sxx += i * i;
-    sxy += i * values[i];
+    const a = Math.max(0, i - half);
+    const b = Math.min(n, i + half + 1);
+    out[i] = values[i] - (pre[b] - pre[a]) / (b - a);
   }
-  const denom = n * sxx - sx * sx;
-  const slope = denom !== 0 ? (n * sxy - sx * sy) / denom : 0;
-  const intercept = (sy - slope * sx) / n;
-  return values.map((v, i) => v - (intercept + slope * i));
+  return out;
 }
