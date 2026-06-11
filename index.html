@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Motion Microscope — see your own heartbeat</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <main id="app">
+    <div id="stage">
+      <canvas id="gpu-canvas"></canvas>
+      <div id="split-handle" title="Drag to compare original vs. magnified">
+        <span class="split-label left">original</span>
+        <span class="split-label right">magnified</span>
+      </div>
+      <div id="start-screen">
+        <h1>Motion Microscope</h1>
+        <p class="tagline">
+          Phase-based motion magnification, live, on your GPU.<br />
+          Sit still, and watch your own heartbeat move your skin.
+        </p>
+        <button id="start-btn">Allow webcam &amp; start</button>
+        <p id="start-error" class="error" hidden></p>
+        <p class="fineprint">
+          All processing runs locally in WebGPU compute shaders.
+          Nothing leaves your machine.
+        </p>
+      </div>
+    </div>
+
+    <aside id="panel" hidden>
+      <header>
+        <h2>Motion Microscope</h2>
+        <div id="perf">— fps</div>
+      </header>
+
+      <section class="vitals">
+        <div id="bpm-block">
+          <div id="bpm-value">—</div>
+          <div id="bpm-label">BPM</div>
+        </div>
+        <canvas id="pulse-spark" width="220" height="56"></canvas>
+        <div id="bpm-hint">hold still, face well lit…</div>
+      </section>
+
+      <section class="control">
+        <label for="alpha">Amplification <span id="alpha-out">×15</span></label>
+        <input id="alpha" type="range" min="0" max="40" step="1" value="15" />
+      </section>
+
+      <section class="control">
+        <label for="freq">Frequency band <span id="freq-out">1.2 Hz</span></label>
+        <input id="freq" type="range" min="0" max="1000" step="1" value="500" />
+        <div class="presets">
+          <button data-freq="0.3">breathing</button>
+          <button data-freq="1.2" class="active">heartbeat</button>
+          <button data-freq="8">tremor / vibration</button>
+        </div>
+      </section>
+
+      <section class="control">
+        <label for="denoise">Noise gate <span id="denoise-out">0.6</span></label>
+        <input id="denoise" type="range" min="0" max="100" step="1" value="60" />
+      </section>
+
+      <footer>
+        Riesz-pyramid phase magnification · WebGPU compute ·
+        <a href="https://people.csail.mit.edu/nwadhwa/riesz-pyramid/" target="_blank" rel="noreferrer">Wadhwa et&nbsp;al. 2014</a>
+      </footer>
+    </aside>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
