@@ -1,7 +1,7 @@
 import { initWebGPU } from "./gpu/context";
 import { MotionMicroscope } from "./gpu/pipeline";
 import { startCamera } from "./camera";
-import { PulseTracker } from "./pulse/bpm";
+import { RhythmTracker, bandForCenterFreq } from "./pulse/bpm";
 import { UI } from "./ui";
 
 const ui = new UI();
@@ -30,16 +30,24 @@ async function run(): Promise<void> {
   probe.width = 64;
   probe.height = 48;
   const probeCtx = probe.getContext("2d", { willReadFrequently: true })!;
-  const tracker = new PulseTracker();
+  const tracker = new RhythmTracker();
 
   const samplePulse = (tMs: number) => {
     probeCtx.drawImage(video, 0, 0, probe.width, probe.height);
     const region = probeCtx.getImageData(16, 8, 32, 32).data;
-    let g = 0;
-    for (let i = 1; i < region.length; i += 4) g += region[i];
-    tracker.addSample(g / (region.length / 4), tMs);
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < region.length; i += 4) {
+      r += region[i];
+      g += region[i + 1];
+      b += region[i + 2];
+    }
+    const px = region.length / 4;
+    tracker.addSample(r / px, g / px, b / px, tMs);
   };
-  setInterval(() => ui.updatePulse(tracker.estimate()), 1000);
+  setInterval(
+    () => ui.updateVitals(tracker.estimate(bandForCenterFreq(ui.params.centerFreq))),
+    1000
+  );
 
   // --- frame loop ----------------------------------------------------------
   let last = performance.now();

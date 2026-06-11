@@ -1,5 +1,5 @@
 import type { MagParams } from "./gpu/pipeline";
-import type { PulseEstimate } from "./pulse/bpm";
+import type { RhythmEstimate } from "./pulse/bpm";
 
 const FREQ_MIN = 0.2;
 const FREQ_MAX = 12;
@@ -36,6 +36,7 @@ export class UI {
     denoiseOut: document.getElementById("denoise-out") as HTMLElement,
     presets: Array.from(document.querySelectorAll<HTMLButtonElement>(".presets button")),
     bpmValue: document.getElementById("bpm-value") as HTMLElement,
+    bpmLabel: document.getElementById("bpm-label") as HTMLElement,
     bpmHint: document.getElementById("bpm-hint") as HTMLElement,
     spark: document.getElementById("pulse-spark") as HTMLCanvasElement,
     perf: document.getElementById("perf") as HTMLElement,
@@ -122,9 +123,10 @@ export class UI {
     this.el.splitHandle.style.left = `${x}px`;
   }
 
-  updatePulse(est: PulseEstimate): void {
-    if (est.bpm !== null && est.confidence > 0.2) {
-      this.el.bpmValue.textContent = String(est.bpm);
+  updateVitals(est: RhythmEstimate): void {
+    this.el.bpmLabel.textContent = est.unit;
+    if (est.value !== null && est.confidence > 0.2) {
+      this.el.bpmValue.textContent = String(est.value);
       this.el.bpmHint.textContent = `signal confidence ${(est.confidence * 100).toFixed(0)}%`;
     } else {
       this.el.bpmValue.textContent = "—";

@@ -1,57 +1,109 @@
 import { describe, expect, it } from "vitest";
-import { PulseTracker } from "../src/pulse/bpm";
+import { RhythmTracker, bandForCenterFreq } from "../src/pulse/bpm";
 
-/** Feed a synthetic rPPG trace: pulse sinusoid + drift + noise at 30 fps. */
-function syntheticTrace(tracker: PulseTracker, bpm: number, seconds: number): void {
-  const fs = 30;
+const fs = 30;
+let seed = 42;
+function rand(): number {
+  // Deterministic LCG so the tests never flake.
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed / 2 ** 32 - 0.5;
+}
+
+/** Synthetic pulse: a chrominance oscillation strongest in green + drift + noise. */
+function pulseTrace(tracker: RhythmTracker, bpm: number, seconds: number): void {
   const f = bpm / 60;
-  let seed = 42;
-  const rand = () => {
-    // Deterministic LCG so the test never flakes.
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32 - 0.5;
-  };
   for (let i = 0; i < seconds * fs; i++) {
     const t = i / fs;
-    const pulse = 0.8 * Math.sin(2 * Math.PI * f * t);
-    const drift = 0.05 * t; // auto-exposure ramp
-    const noise = 0.3 * rand();
-    tracker.addSample(120 + pulse + drift + noise, i * (1000 / fs));
+    const p = Math.sin(2 * Math.PI * f * t);
+    const drift = 0.04 * t;
+    tracker.addSample(
+      150 + drift + 0.2 * p + 0.3 * rand(),
+      140 + drift + 1.0 * p + 0.3 * rand(),
+      120 + drift - 0.1 * p + 0.3 * rand(),
+      i * (1000 / fs)
+    );
   }
 }
 
-describe("PulseTracker", () => {
+/** Synthetic motion: a luminance oscillation common to all channels. */
+function motionTrace(tracker: RhythmTracker, hz: number, seconds: number, amp = 4): void {
+  for (let i = 0; i < seconds * fs; i++) {
+    const t = i / fs;
+    const m = amp * Math.sin(2 * Math.PI * hz * t);
+    tracker.addSample(150 + m + 0.3 * rand(), 140 + m + 0.3 * rand(), 120 + m + 0.3 * rand(), i * (1000 / fs));
+  }
+}
+
+describe("bandForCenterFreq", () => {
+  it("routes slider position to the right readout", () => {
+    expect(bandForCenterFreq(0.3).kind).toBe("breathing");
+    expect(bandForCenterFreq(1.2).kind).toBe("pulse");
+    expect(bandForCenterFreq(8).kind).toBe("vibration");
+  });
+});
+
+describe("RhythmTracker — pulse band", () => {
+  const band = bandForCenterFreq(1.2);
+
   it("reports nothing before enough samples arrive", () => {
-    const tracker = new PulseTracker();
-    syntheticTrace(tracker, 72, 3);
-    expect(tracker.estimate().bpm).toBeNull();
+    seed = 42;
+    const tracker = new RhythmTracker();
+    pulseTrace(tracker, 72, 3);
+    const est = tracker.estimate(band);
+    expect(est.value).toBeNull();
+    expect(est.unit).toBe("BPM");
   });
 
-  it("recovers 72 bpm from a noisy drifting trace", () => {
-    const tracker = new PulseTracker();
-    syntheticTrace(tracker, 72, 17);
-    const est = tracker.estimate();
-    expect(est.bpm).not.toBeNull();
-    expect(Math.abs(est.bpm! - 72)).toBeLessThanOrEqual(2);
+  it("recovers 72 BPM from a noisy drifting trace via POS", () => {
+    seed = 42;
+    const tracker = new RhythmTracker();
+    pulseTrace(tracker, 72, 30);
+    const est = tracker.estimate(band);
+    expect(est.value).not.toBeNull();
+    expect(Math.abs(est.value! - 72)).toBeLessThanOrEqual(2);
     expect(est.confidence).toBeGreaterThan(0.25);
   });
 
-  it("recovers a fast heart rate (150 bpm)", () => {
-    const tracker = new PulseTracker();
-    syntheticTrace(tracker, 150, 17);
-    const est = tracker.estimate();
-    expect(est.bpm).not.toBeNull();
-    expect(Math.abs(est.bpm! - 150)).toBeLessThanOrEqual(3);
+  it("recovers a fast heart rate (150 BPM)", () => {
+    seed = 42;
+    const tracker = new RhythmTracker();
+    pulseTrace(tracker, 150, 30);
+    const est = tracker.estimate(band);
+    expect(Math.abs(est.value! - 150)).toBeLessThanOrEqual(3);
   });
+});
 
-  it("stays silent on pure noise", () => {
-    const tracker = new PulseTracker();
-    let seed = 7;
-    for (let i = 0; i < 510; i++) {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      tracker.addSample(120 + (seed / 2 ** 32 - 0.5) * 2, i * 33.3);
+describe("RhythmTracker — breathing band", () => {
+  it("recovers a 15 breaths/min rhythm and labels it correctly", () => {
+    seed = 7;
+    const tracker = new RhythmTracker();
+    motionTrace(tracker, 15 / 60, 30); // 0.25 Hz
+    const est = tracker.estimate(bandForCenterFreq(0.3));
+    expect(est.unit).toBe("breaths/min");
+    expect(est.value).not.toBeNull();
+    expect(Math.abs(est.value! - 15)).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("RhythmTracker — vibration band", () => {
+  it("reports a raw frequency in Hz", () => {
+    seed = 99;
+    const tracker = new RhythmTracker();
+    motionTrace(tracker, 8, 12); // 8 Hz tremor
+    const est = tracker.estimate(bandForCenterFreq(8));
+    expect(est.unit).toBe("Hz");
+    expect(est.value).not.toBeNull();
+    expect(Math.abs(est.value! - 8)).toBeLessThanOrEqual(0.5);
+  });
+});
+
+describe("RhythmTracker — noise rejection", () => {
+  it("stays low-confidence on pure noise", () => {
+    seed = 7;
+    const tracker = new RhythmTracker();
+    for (let i = 0; i < 900; i++) {
+      tracker.addSample(150 + rand() * 2, 140 + rand() * 2, 120 + rand() * 2, i * (1000 / fs));
     }
-    // White noise has no prominent band peak; smoothed bpm should never lock.
-    expect(tracker.estimate().confidence).toBeLessThan(0.6);
+    expect(tracker.estimate(bandForCenterFreq(1.2)).confidence).toBeLessThan(0.6);
   });
 });
