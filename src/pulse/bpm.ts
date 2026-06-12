@@ -27,7 +27,7 @@ export interface RhythmEstimate {
 }
 
 const WINDOW = 900; // samples kept (~30 s at 30 fps) — enough for slow breathing
-const FFT_SIZE = 2048; // zero-padded: ~0.015 Hz bin spacing at 30 fps
+export const FFT_SIZE = 2048; // zero-padded: ~0.015 Hz bin spacing at 30 fps
 
 /**
  * Pick the measurement band from the slider's center frequency. The readout
@@ -222,7 +222,7 @@ export class RhythmTracker {
 }
 
 /** Hamming-windowed, zero-padded magnitude spectrum (half, length FFT_SIZE/2). */
-function magnitudeSpectrum(signal: number[], n: number): Float64Array {
+export function magnitudeSpectrum(signal: number[], n: number): Float64Array {
   const re = new Float64Array(FFT_SIZE);
   const im = new Float64Array(FFT_SIZE);
   for (let i = 0; i < n; i++) {
