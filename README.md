@@ -112,15 +112,17 @@ physics:
   the skin-tone vector. This rejects the ambient-brightness flicker that
   naïve green-channel rPPG mistakes for a heartbeat.
 - **Breathing** is *motion* — the head and shoulders visibly translate. The
-  measurement tracks the **global optical-flow translation** of the frame: the
-  Lucas-Kanade least-squares fit of a single (dx, dy) to the whole probe's
-  brightness gradients each frame, accumulated into a position signal. This is
-  the same bulk movement the magnifier makes visible, measured directly — and
-  it matters which estimator you pick. An earlier version read a brightness
-  *centroid* over the skin mask, but the mask flickers frame to frame, so the
-  centroid jittered and locked onto stray low-frequency wobble instead of the
-  breath. Optical flow uses every pixel's gradient consistently and recovers
-  sub-pixel shifts (unit-tested to ~0.02 px), so it follows breathing cleanly.
+  measurement is **foreground-weighted global optical flow**: a Lucas-Kanade
+  least-squares fit of one (dx, dy) per frame to the probe's brightness
+  gradients, weighted by a per-pixel activity map (an EMA of temporal change)
+  so the static background — which is most of the pixels — can't drag the
+  estimate toward zero. The per-frame velocity is fed to the spectrum directly
+  rather than integrated into a position, because an integrated random walk
+  buries the breathing peak under low-frequency noise. Two earlier estimators
+  failed here and are worth recording: a brightness *centroid* over the skin
+  mask jittered with the mask itself, and unweighted whole-frame flow was
+  diluted to nothing by the static background. The estimator matters more than
+  the idea.
 
 Both paths are high-passed with a moving-average baseline sized to the band's
 low edge, which flattens slow, *non-linear* lighting drift (auto-exposure
@@ -145,12 +147,16 @@ behind a prominence gate. None of it reads the magnified output — the visible
 pulsing and the ticking number are independent measurements corroborating each
 other, not one effect dressing up the other.
 
-The signal path is plain TypeScript with unit tests (`npm test`): FFT
-correctness, POS recovery of 72 and 150 BPM from noisy drifting traces,
-breathing recovery from centroid motion **with colour held perfectly flat**
-(the case the old luminance approach could not see), breathing recovery under
-**non-linear drift** that defeats a linear detrend, the high-pass preserving
-an in-band tone while killing a ramp, and silence on pure noise.
+The signal path is plain TypeScript with unit tests (`npm test`), and the
+test that matters most is **end-to-end**: the whole frame→number pipeline
+(`VitalsProbe`) is driven by a synthetic *video* — a textured skin-toned
+figure breathing over a textured static background, with sensor noise — and
+must recover 15 and 24 breaths/min and 72 BPM from raw RGBA frames. That
+harness exists because unit-testing the pieces in isolation passed while the
+assembled pipeline didn't work; only a frame-level test catches estimator
+bugs like background dilution. Below it sit unit tests for the FFT, the POS
+recovery under drift, sub-pixel optical-flow accuracy (~0.02 px), the
+band high-pass, and silence on pure noise.
 
 ## Performance
 

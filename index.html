@@ -14,10 +14,6 @@
         <span class="split-label left">original</span>
         <span class="split-label right">magnified</span>
       </div>
-      <div id="beat" hidden>
-        <div id="beat-dot"></div>
-        <span id="beat-label">pulse</span>
-      </div>
       <div id="start-screen">
         <h1>Motion Microscope</h1>
         <p class="tagline">
@@ -35,27 +31,32 @@
 
     <aside id="panel" hidden>
       <header>
-        <h2>Motion Microscope</h2>
+        <h2>Motion&nbsp;Microscope</h2>
         <div id="perf">— fps</div>
       </header>
 
-      <section class="vitals">
-        <div id="bpm-block">
-          <div id="bpm-value">—</div>
-          <div id="bpm-label">BPM</div>
+      <!-- ---- vitals ---- -->
+      <section id="vitals">
+        <div id="vitals-head">
+          <div id="beat-ring">
+            <div id="beat-pulse"></div>
+            <div id="bpm-value">—</div>
+          </div>
+          <div id="vitals-meta">
+            <div id="bpm-label">BPM</div>
+            <div id="bpm-hint">hold still, face well lit…</div>
+          </div>
         </div>
-        <canvas id="pulse-spark" width="220" height="56"></canvas>
-        <div id="bpm-hint">hold still, face well lit…</div>
-        <label id="lock-row"><input id="lock" type="checkbox" /> tune magnifier to my rate</label>
-        <button id="explain-toggle" type="button">ⓘ how is the BPM measured?</button>
-        <div id="explain" hidden>
-          Two different signals. The motion you <em>see</em> magnified — breathing,
-          a faint pulse — is amplified movement. The <strong>BPM is not from that
-          movement.</strong> It's read separately from ~1% changes in your skin's
-          colour as blood flows through it: invisible to your eye, but measurable
-          across thousands of pixels averaged over time. The number and the
-          pulsing are independent measurements that agree —
-          <a href="https://news.mit.edu/2010/pulse-camera-1004" target="_blank" rel="noreferrer">the colour method is rPPG (MIT, 2010)</a>.
+        <canvas id="wave" width="600" height="132"></canvas>
+        <div id="wave-axis"><span id="wave-span">—</span><span>live · last few seconds</span></div>
+      </section>
+
+      <!-- ---- what to look for ---- -->
+      <section class="control" id="mode-control">
+        <label>Looking at</label>
+        <div class="presets">
+          <button data-freq="0.3">breathing</button>
+          <button data-freq="1.2" class="active">heartbeat</button>
         </div>
       </section>
 
@@ -65,18 +66,27 @@
       </section>
 
       <section class="control">
-        <label for="freq">Frequency band <span id="freq-out">1.2 Hz</span></label>
+        <label for="freq">Fine frequency <span id="freq-out">1.2 Hz</span></label>
         <input id="freq" type="range" min="0" max="1000" step="1" value="500" />
-        <div class="presets">
-          <button data-freq="0.3">breathing</button>
-          <button data-freq="1.2" class="active">heartbeat</button>
-        </div>
       </section>
 
       <section class="control">
         <label for="denoise">Noise gate <span id="denoise-out">0.6</span></label>
         <input id="denoise" type="range" min="0" max="100" step="1" value="60" />
       </section>
+
+      <label id="lock-row"><input id="lock" type="checkbox" /> tune magnifier to my rate</label>
+
+      <button id="explain-toggle" type="button">ⓘ how is the BPM measured?</button>
+      <div id="explain" hidden>
+        Two different signals. The motion you <em>see</em> magnified — breathing,
+        a faint pulse — is amplified movement. The <strong>BPM is not from that
+        movement.</strong> It's read separately from ~1% changes in your skin's
+        colour as blood flows through it: invisible to your eye, but measurable
+        across thousands of pixels averaged over time. The number and the
+        pulsing are independent measurements that agree —
+        <a href="https://news.mit.edu/2010/pulse-camera-1004" target="_blank" rel="noreferrer">the colour method is rPPG (MIT, 2010)</a>.
+      </div>
 
       <footer>
         Riesz-pyramid phase magnification · WebGPU compute ·

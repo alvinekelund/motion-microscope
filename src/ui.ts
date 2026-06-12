@@ -2,8 +2,7 @@ import type { MagParams } from "./gpu/pipeline";
 import type { RhythmEstimate } from "./pulse/bpm";
 
 // Slider spans only the two bands that actually show on a face: breathing
-// (~0.2 Hz) through the cardiac range (up to ~210 bpm). The high-frequency
-// "vibration" regime had nothing to display on a webcam selfie, so it's gone.
+// (~0.2 Hz) through the cardiac range (up to ~210 bpm).
 const FREQ_MIN = 0.2;
 const FREQ_MAX = 3.5;
 
@@ -41,21 +40,23 @@ export class UI {
     bpmValue: document.getElementById("bpm-value") as HTMLElement,
     bpmLabel: document.getElementById("bpm-label") as HTMLElement,
     bpmHint: document.getElementById("bpm-hint") as HTMLElement,
-    spark: document.getElementById("pulse-spark") as HTMLCanvasElement,
+    wave: document.getElementById("wave") as HTMLCanvasElement,
+    waveSpan: document.getElementById("wave-span") as HTMLElement,
+    beatPulse: document.getElementById("beat-pulse") as HTMLElement,
     lock: document.getElementById("lock") as HTMLInputElement,
     explainToggle: document.getElementById("explain-toggle") as HTMLButtonElement,
     explain: document.getElementById("explain") as HTMLElement,
-    beat: document.getElementById("beat") as HTMLElement,
-    beatDot: document.getElementById("beat-dot") as HTMLElement,
-    beatLabel: document.getElementById("beat-label") as HTMLElement,
     perf: document.getElementById("perf") as HTMLElement,
   };
 
-  // Beat indicator state — a continuous oscillator at the detected rate.
+  // Beat ring state — a continuous oscillator at the detected rate.
   private beatHz = 0;
   private beatConf = 0;
   private beatPhase = 0;
   private beatLast = 0;
+
+  // Waveform display state.
+  private waveScale = 1e-6; // smoothed autoscale so the trace breathes, not jumps
 
   constructor() {
     this.el.alpha.addEventListener("input", () => {
@@ -116,33 +117,35 @@ export class UI {
     this.el.startScreen.style.display = "none";
     this.el.panel.hidden = false;
     this.el.splitHandle.style.display = "block";
-    this.el.beat.hidden = false;
     this.positionSplitHandle();
     requestAnimationFrame(this.animateBeat);
   }
 
+  get canvas(): HTMLCanvasElement {
+    return this.el.canvas;
+  }
+
   /**
-   * Drive the corner dot with a continuous oscillator at the detected rate, so
-   * it visibly inflates once per beat/breath — independent of the 1 Hz vitals
-   * tick, so the motion is smooth. It only pulses convincingly when there's a
-   * confident lock; otherwise it idles dim, which keeps it honest.
+   * The ring around the big number swells once per detected beat/breath — a
+   * continuous oscillator at the measured rate, independent of the 1 Hz vitals
+   * tick so the motion is smooth. It only pulses when there's a confident
+   * lock; otherwise it stays still, which keeps it honest.
    */
   private animateBeat = (now: number): void => {
     const dt = this.beatLast ? Math.min((now - this.beatLast) / 1000, 0.1) : 0;
     this.beatLast = now;
     const locked = this.beatHz > 0 && this.beatConf > 0.3;
-    const hz = locked ? this.beatHz : 0.25; // idle ≈ a calm breath
-    this.beatPhase += 2 * Math.PI * hz * dt;
-    const s = 0.5 + 0.5 * Math.sin(this.beatPhase); // 0..1, peaks each cycle
-    const grow = locked ? 0.35 : 0.12;
-    this.el.beatDot.style.transform = `scale(${(1 + grow * s).toFixed(3)})`;
-    this.el.beatDot.style.opacity = (locked ? 0.4 + 0.5 * s : 0.14 + 0.06 * s).toFixed(3);
+    if (locked) {
+      this.beatPhase += 2 * Math.PI * this.beatHz * dt;
+      const s = 0.5 + 0.5 * Math.sin(this.beatPhase); // 0..1 once per cycle
+      this.el.beatPulse.style.opacity = (0.25 + 0.6 * s).toFixed(3);
+      this.el.beatPulse.style.transform = `scale(${(1 + 0.1 * s).toFixed(3)})`;
+    } else {
+      this.el.beatPulse.style.opacity = "0";
+      this.el.beatPulse.style.transform = "scale(1)";
+    }
     requestAnimationFrame(this.animateBeat);
   };
-
-  get canvas(): HTMLCanvasElement {
-    return this.el.canvas;
-  }
 
   private bindSplitDrag(): void {
     const handle = this.el.splitHandle;
@@ -179,14 +182,14 @@ export class UI {
     } else {
       this.el.bpmValue.textContent = "—";
       this.el.bpmHint.textContent =
-        est.wave.length < 160 ? "measuring… hold still" : "weak signal — more light helps";
+        est.wave.length < 60 ? "measuring… hold still" : "locking on… stay still, face the light";
     }
-    this.drawSparkline(est.wave);
+    this.el.waveSpan.textContent = `${est.waveSeconds}s window`;
+    this.drawWave(est.wave);
 
-    // Feed the beat indicator: pulse at the detected rate when confident.
+    // Feed the beat ring: pulse at the detected rate when confident.
     this.beatHz = est.freqHz ?? 0;
     this.beatConf = est.confidence;
-    this.el.beatLabel.textContent = est.label === "BREATHS" ? "breath" : "pulse";
 
     // Auto-tune: steer the magnifier to the rate we just measured. Safe
     // because the detector never reads the magnified output — no feedback.
@@ -201,23 +204,63 @@ export class UI {
     this.el.perf.textContent = `${fps.toFixed(0)} fps`;
   }
 
-  private drawSparkline(wave: number[]): void {
-    const ctx = this.el.spark.getContext("2d");
+  /**
+   * Big, readable trace: spans several full cycles (the window length comes
+   * from the band), auto-scaled to fill the height with a smoothed gain so
+   * the curve doesn't jump, with a midline and a subtle grid.
+   */
+  private drawWave(wave: number[]): void {
+    const ctx = this.el.wave.getContext("2d");
     if (!ctx) return;
-    const { width: w, height: h } = this.el.spark;
+    const w = this.el.wave.width;
+    const h = this.el.wave.height;
     ctx.clearRect(0, 0, w, h);
-    if (wave.length < 8) return;
-    let max = 1e-6;
-    for (const v of wave) max = Math.max(max, Math.abs(v));
+
+    // Grid: midline + quarter lines.
+    ctx.strokeStyle = "#1b232c";
+    ctx.lineWidth = 1;
+    for (const fy of [0.25, 0.5, 0.75]) {
+      ctx.beginPath();
+      ctx.moveTo(0, h * fy + 0.5);
+      ctx.lineTo(w, h * fy + 0.5);
+      ctx.stroke();
+    }
+
+    if (wave.length < 16) return;
+
+    // Light moving-average smoothing for display only — the estimator sees
+    // the raw signal; this just makes the trace read like a breath/pulse
+    // instead of a noisy velocity record.
+    const K = 5;
+    const sm = new Array<number>(wave.length);
+    for (let i = 0; i < wave.length; i++) {
+      let acc = 0;
+      let cnt = 0;
+      for (let k = -K; k <= K; k++) {
+        const j = i + k;
+        if (j >= 0 && j < wave.length) { acc += wave[j]; cnt++; }
+      }
+      sm[i] = acc / cnt;
+    }
+    wave = sm;
+
+    // Smoothed autoscale: track the 98th-percentile amplitude so one spike
+    // doesn't flatten the rest, easing the gain between frames.
+    const sorted = wave.map(Math.abs).sort((a, b) => a - b);
+    const p98 = sorted[Math.floor(sorted.length * 0.98)] || 1e-6;
+    this.waveScale = 0.7 * this.waveScale + 0.3 * Math.max(p98, 1e-6);
+    const gain = (h * 0.42) / this.waveScale;
+
     ctx.strokeStyle = "#ff4d5e";
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
     ctx.beginPath();
-    wave.forEach((v, i) => {
+    for (let i = 0; i < wave.length; i++) {
       const x = (i / (wave.length - 1)) * w;
-      const y = h / 2 - (v / max) * (h / 2 - 4);
+      const y = h / 2 - Math.max(-h * 0.46, Math.min(h * 0.46, wave[i] * gain));
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
-    });
+    }
     ctx.stroke();
   }
 }

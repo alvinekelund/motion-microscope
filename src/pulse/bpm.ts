@@ -20,8 +20,10 @@ export interface RhythmEstimate {
   freqHz: number | null;
   /** Peak prominence in the search band, 0..1. >0.25 is trustworthy. */
   confidence: number;
-  /** Recent signal for the sparkline (newest last). */
+  /** Recent signal for the waveform display (newest last). */
   wave: number[];
+  /** How many seconds `wave` spans — band-aware, sized to show several cycles. */
+  waveSeconds: number;
 }
 
 const WINDOW = 900; // samples kept (~30 s at 30 fps) — enough for slow breathing
@@ -118,8 +120,18 @@ export class RhythmTracker {
     // detrend leaves behind) without touching the signal in-band.
     const rawSources = band.kind === "pulse" ? [this.posSignal()] : [this.cx.slice(), this.cy.slice()];
     const sources = rawSources.map((s) => bandHighpass(s, fs, band.lo));
-    const wave = sources[0].slice(-160);
-    const blank: RhythmEstimate = { value: null, unit, label, freqHz: null, confidence: 0, wave };
+
+    // Waveform for display: span several cycles of the band's typical rate
+    // (a breath is ~4-5 s, so a fixed short window showed less than one wave),
+    // and pick the *dominant* source — for vertical breathing the y-axis
+    // carries the signal while x is noise, so always showing source 0 was wrong.
+    const waveSeconds = band.kind === "breathing" ? 24 : 7;
+    const rms = (a: number[]) => a.reduce((s, v) => s + v * v, 0);
+    const display = sources.length === 1
+      ? sources[0]
+      : rms(sources[0]) >= rms(sources[1]) ? sources[0] : sources[1];
+    const wave = display.slice(-Math.round(waveSeconds * fs));
+    const blank: RhythmEstimate = { value: null, unit, label, freqHz: null, confidence: 0, wave, waveSeconds };
     if (n === 0) return blank;
 
     // Warm-up: enough samples for ~3 cycles of a *typical* rate in the band.
@@ -170,7 +182,7 @@ export class RhythmTracker {
     const value =
       sm === undefined ? null : band.kind === "vibration" ? Math.round(sm * 10) / 10 : Math.round(sm);
     const freqHz = sm === undefined ? null : band.kind === "vibration" ? sm : sm / 60;
-    return { value, unit, label, freqHz, confidence, wave };
+    return { value, unit, label, freqHz, confidence, wave, waveSeconds };
   }
 
   private sampleRate(): number {

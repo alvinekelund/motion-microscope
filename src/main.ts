@@ -1,9 +1,8 @@
 import { initWebGPU } from "./gpu/context";
 import { MotionMicroscope } from "./gpu/pipeline";
 import { startCamera } from "./camera";
-import { RhythmTracker, bandForCenterFreq } from "./pulse/bpm";
-import { isSkin } from "./pulse/skin";
-import { globalTranslation } from "./pulse/flow";
+import { bandForCenterFreq } from "./pulse/bpm";
+import { VitalsProbe } from "./pulse/probe";
 import { UI } from "./ui";
 
 const ui = new UI();
@@ -27,60 +26,38 @@ async function run(): Promise<void> {
   ui.enterLiveMode();
 
   // --- independent vitals path (never reads the magnified output) ---------
-  // Sample the *raw* feed at a tiny resolution. Two observables come out of
-  // the same probe: mean colour over skin pixels drives the POS pulse
-  // estimate, and the global optical-flow translation of the frame drives the
-  // breathing (motion) estimate — the bulk movement the magnifier makes
-  // visible, measured directly rather than via a noisy centroid.
-  const probe = document.createElement("canvas");
-  const PW = 64;
-  const PH = 48;
-  const SX = 2, SY = 2, SW = PW - 4, SH = PH - 4; // scan region (2px border trimmed)
-  probe.width = PW;
-  probe.height = PH;
-  const probeCtx = probe.getContext("2d", { willReadFrequently: true })!;
-  const tracker = new RhythmTracker();
+  // Downscale the raw feed into the VitalsProbe each frame. The probe extracts
+  // skin colour (→ POS pulse) and foreground-weighted optical-flow velocity
+  // (→ breathing) from the same pixels. This exact class is driven by a
+  // synthetic-video test that proves both signals lock (see probe.test.ts).
+  const PW = 96;
+  const PH = 72;
+  const probeCanvas = document.createElement("canvas");
+  probeCanvas.width = PW;
+  probeCanvas.height = PH;
+  const probeCtx = probeCanvas.getContext("2d", { willReadFrequently: true })!;
+  const probe = new VitalsProbe(PW, PH);
 
-  let prevLuma: Float64Array | null = null;
-  let posX = 0; // accumulated flow — the band high-pass removes its drift
-  let posY = 0;
-
-  const samplePulse = (tMs: number) => {
+  // Sampling is driven by a worker-timer rather than the render loop:
+  // dedicated-worker timers aren't subject to hidden-tab throttling, so the
+  // measurement keeps its 30 Hz cadence even if the visitor briefly switches
+  // tabs (the render loop, which IS compositor-gated, just pauses). Frames
+  // that haven't advanced are skipped so duplicates never enter the spectrum.
+  let lastVideoTime = -1;
+  const samplePulse = () => {
+    if (video.currentTime === lastVideoTime) return;
+    lastVideoTime = video.currentTime;
     probeCtx.drawImage(video, 0, 0, PW, PH);
-    const region = probeCtx.getImageData(SX, SY, SW, SH).data;
-
-    // One pass: skin-masked colour (for pulse) plus a luma frame (for flow).
-    const luma = new Float64Array(SW * SH);
-    let sr = 0, sg = 0, sb = 0, sN = 0;
-    let fr = 0, fg = 0, fb = 0;
-    for (let p = 0, j = 0; j < SW * SH; j++, p += 4) {
-      const pr = region[p], pg = region[p + 1], pb = region[p + 2];
-      luma[j] = 0.299 * pr + 0.587 * pg + 0.114 * pb;
-      fr += pr; fg += pg; fb += pb;
-      if (isSkin(pr, pg, pb)) { sr += pr; sg += pg; sb += pb; sN++; }
-    }
-
-    // Colour: prefer the skin mask, fall back to the whole region if too little
-    // skin is found so we never average a near-empty mask.
-    const total = SW * SH;
-    const useSkin = sN >= total * 0.05;
-    const n = useSkin ? sN : total;
-    const r = useSkin ? sr : fr;
-    const g = useSkin ? sg : fg;
-    const b = useSkin ? sb : fb;
-
-    // Motion: accumulate the per-frame global translation into a position.
-    if (prevLuma) {
-      const { dx, dy } = globalTranslation(prevLuma, luma, SW, SH);
-      posX += dx;
-      posY += dy;
-    }
-    prevLuma = luma;
-
-    tracker.addSample(r / n, g / n, b / n, posX, posY, tMs);
+    probe.process(probeCtx.getImageData(0, 0, PW, PH).data, performance.now());
   };
+  const samplerWorker = new Worker(
+    URL.createObjectURL(
+      new Blob(["setInterval(() => postMessage(0), 33);"], { type: "application/javascript" })
+    )
+  );
+  samplerWorker.onmessage = samplePulse;
   setInterval(
-    () => ui.updateVitals(tracker.estimate(bandForCenterFreq(ui.params.centerFreq))),
+    () => ui.updateVitals(probe.estimate(bandForCenterFreq(ui.params.centerFreq))),
     1000
   );
 
@@ -94,7 +71,6 @@ async function run(): Promise<void> {
     last = now;
 
     scope.frame(dt, ui.params);
-    samplePulse(now);
 
     fpsAcc += dt;
     if (++fpsCount === 30) {
