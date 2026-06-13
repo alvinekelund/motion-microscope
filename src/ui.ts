@@ -42,6 +42,7 @@ export class UI {
     bpmHint: document.getElementById("bpm-hint") as HTMLElement,
     wave: document.getElementById("wave") as HTMLCanvasElement,
     waveSpan: document.getElementById("wave-span") as HTMLElement,
+    beatRing: document.getElementById("beat-ring") as HTMLElement,
     beatPulse: document.getElementById("beat-pulse") as HTMLElement,
     lock: document.getElementById("lock") as HTMLInputElement,
     explainToggle: document.getElementById("explain-toggle") as HTMLButtonElement,
@@ -127,23 +128,25 @@ export class UI {
 
   /**
    * The ring around the big number swells once per detected beat/breath — a
-   * continuous oscillator at the measured rate, independent of the 1 Hz vitals
-   * tick so the motion is smooth. It only pulses when there's a confident
-   * lock; otherwise it stays still, which keeps it honest.
+   * continuous oscillator, independent of the 1 Hz vitals tick so the motion
+   * is smooth. It's *always* alive while the tool runs — a calm idle pulse
+   * when there's no lock yet (so you can see it's working) that grows into a
+   * strong pulse at your actual rate once a confident lock lands.
    */
   private animateBeat = (now: number): void => {
     const dt = this.beatLast ? Math.min((now - this.beatLast) / 1000, 0.1) : 0;
     this.beatLast = now;
     const locked = this.beatHz > 0 && this.beatConf > 0.3;
-    if (locked) {
-      this.beatPhase += 2 * Math.PI * this.beatHz * dt;
-      const s = 0.5 + 0.5 * Math.sin(this.beatPhase); // 0..1 once per cycle
-      this.el.beatPulse.style.opacity = (0.25 + 0.6 * s).toFixed(3);
-      this.el.beatPulse.style.transform = `scale(${(1 + 0.1 * s).toFixed(3)})`;
-    } else {
-      this.el.beatPulse.style.opacity = "0";
-      this.el.beatPulse.style.transform = "scale(1)";
-    }
+    // Idle ~0.25 Hz heartbeat-like cadence until we lock onto the real rate.
+    const hz = locked ? this.beatHz : 0.4;
+    this.beatPhase += 2 * Math.PI * hz * dt;
+    const s = 0.5 + 0.5 * Math.sin(this.beatPhase); // 0..1, peaks once per cycle
+    const grow = locked ? 0.16 : 0.07;
+    const baseOpacity = locked ? 0.35 : 0.16;
+    const swing = locked ? 0.55 : 0.22;
+    this.el.beatPulse.style.opacity = (baseOpacity + swing * s).toFixed(3);
+    this.el.beatPulse.style.transform = `scale(${(1 + grow * s).toFixed(3)})`;
+    this.el.beatRing.classList.toggle("locked", locked);
     requestAnimationFrame(this.animateBeat);
   };
 
