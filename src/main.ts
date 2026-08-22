@@ -61,6 +61,13 @@ async function run(): Promise<void> {
     1000
   );
 
+  // Diagnostic hook: lets a debugger inspect the live probe and pull real
+  // estimates for both bands regardless of what the UI is showing.
+  (window as unknown as Record<string, unknown>).__mm = {
+    probe,
+    est: (f: number) => probe.estimate(bandForCenterFreq(f)),
+  };
+
   // --- frame loop ----------------------------------------------------------
   let last = performance.now();
   let fpsAcc = 0;
